@@ -23,7 +23,7 @@ import type { SegmentToExport } from '../types';
 import type { GenerateOutFileNames } from '../util/outputNameTemplate';
 import { defaultCutFileTemplate, defaultCutMergedFileTemplate } from '../util/outputNameTemplate';
 import type { FFprobeStream } from '../../../common/ffprobe';
-import type { AvoidNegativeTs, PreserveMetadata } from '../../../common/types';
+import type { AvoidNegativeTs, CompressExport, CompressFps, CompressResolution, PreserveMetadata } from '../../../common/types';
 import TextInput from './TextInput';
 import type { UseSegments } from '../hooks/useSegments';
 import ExportSheet from './ExportSheet';
@@ -36,6 +36,9 @@ import { troubleshootingUrl } from '../../../common/constants';
 import OutDirSelector from './OutDirSelector';
 import mainApi from '../mainApi';
 
+
+const compressFpsValues: CompressFps[] = ['original', 24, 25, 30, 50, 60];
+const compressResolutionValues: CompressResolution[] = ['original', 1080, 720];
 
 const adjustCutFromValues = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 const adjustCutToValues = [-10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -173,7 +176,7 @@ function ExportConfirm({
 }) {
   const { t } = useTranslation();
 
-  const { keyframeCut, toggleKeyframeCut, preserveMovData, setPreserveMovData, preserveMetadata, setPreserveMetadata, preserveChapters, setPreserveChapters, movFastStart, setMovFastStart, avoidNegativeTs, setAvoidNegativeTs, autoDeleteMergedSegments, exportConfirmEnabled, toggleExportConfirmEnabled, segmentsToChapters, setSegmentsToChapters, preserveMetadataOnMerge, setPreserveMetadataOnMerge, enableSmartCut, setEnableSmartCut, effectiveExportMode, enableOverwriteOutput, setEnableOverwriteOutput, ffmpegExperimental, setFfmpegExperimental, cutFromAdjustmentFrames, setCutFromAdjustmentFrames, cutToAdjustmentFrames, setCutToAdjustmentFrames, setCutFileTemplate, setCutMergedFileTemplate, simpleMode, keyframesEnabled } = useUserSettings();
+  const { keyframeCut, toggleKeyframeCut, preserveMovData, setPreserveMovData, preserveMetadata, setPreserveMetadata, preserveChapters, setPreserveChapters, movFastStart, setMovFastStart, avoidNegativeTs, setAvoidNegativeTs, autoDeleteMergedSegments, exportConfirmEnabled, toggleExportConfirmEnabled, segmentsToChapters, setSegmentsToChapters, preserveMetadataOnMerge, setPreserveMetadataOnMerge, enableSmartCut, setEnableSmartCut, effectiveExportMode, enableOverwriteOutput, setEnableOverwriteOutput, ffmpegExperimental, setFfmpegExperimental, cutFromAdjustmentFrames, setCutFromAdjustmentFrames, cutToAdjustmentFrames, setCutToAdjustmentFrames, setCutFileTemplate, setCutMergedFileTemplate, simpleMode, keyframesEnabled, compressExport, setCompressExport } = useUserSettings();
 
   const [showAdvanced, setShowAdvanced] = useState(!simpleMode);
 
@@ -334,6 +337,12 @@ function ExportConfirm({
     showHelpText({ text: t('Enable experimental ffmpeg features flag?') });
   }, [showHelpText, t]);
 
+  const updateCompressExport = useCallback((patch: Partial<CompressExport>) => setCompressExport((v) => ({ ...v, ...patch })), [setCompressExport]);
+
+  const onCompressExportHelpPress = useCallback(() => {
+    showHelpText({ text: t('Re-encode the exported segments to a smaller MP4 file (H.264 or H.265). Cuts will be frame accurate, but the export is slower and not lossless. Only the first video and audio track are kept.') });
+  }, [showHelpText, t]);
+
   const canEditSegTemplate = !willMerge || !autoDeleteMergedSegments;
 
   const handleEncBitrateToggle = useCallback((checked: boolean) => {
@@ -395,10 +404,63 @@ function ExportConfirm({
 
           <tr>
             <td>
+              {t('Compress (re-encode)')}
+            </td>
+            <td>
+              <Switch checked={compressExport.enabled} onCheckedChange={(enabled) => updateCompressExport({ enabled })} />
+            </td>
+            <td>
+              <HelpIcon onClick={onCompressExportHelpPress} />
+            </td>
+          </tr>
+
+          {compressExport.enabled && (
+            <>
+              <tr>
+                <td>
+                  {t('Video codec')}
+                </td>
+                <td>
+                  <Select value={compressExport.videoCodec} onChange={(e) => updateCompressExport({ videoCodec: e.target.value as CompressExport['videoCodec'] })} style={{ height: '1.8em' }}>
+                    <option value="h264">H.264</option>
+                    <option value="h265">H.265 (HEVC)</option>
+                  </Select>
+                </td>
+                <td />
+              </tr>
+
+              <tr>
+                <td>
+                  {t('Resolution')}
+                </td>
+                <td>
+                  <Select value={String(compressExport.resolution)} onChange={(e) => updateCompressExport({ resolution: e.target.value === 'original' ? 'original' : Number(e.target.value) as CompressResolution })} style={{ height: '1.8em' }}>
+                    {compressResolutionValues.map((v) => <option key={v} value={String(v)}>{v === 'original' ? t('Original') : `${v}p`}</option>)}
+                  </Select>
+                </td>
+                <td />
+              </tr>
+
+              <tr>
+                <td>
+                  {t('Frame rate')}
+                </td>
+                <td>
+                  <Select value={String(compressExport.fps)} onChange={(e) => updateCompressExport({ fps: e.target.value === 'original' ? 'original' : Number(e.target.value) as CompressFps })} style={{ height: '1.8em' }}>
+                    {compressFpsValues.map((v) => <option key={v} value={String(v)}>{v === 'original' ? t('Original') : `${v} fps`}</option>)}
+                  </Select>
+                </td>
+                <td />
+              </tr>
+            </>
+          )}
+
+          <tr>
+            <td>
               {t('Output container format:')}
             </td>
             <td>
-              {renderOutFmt({ height: '1.8em', maxWidth: 150 })}
+              {compressExport.enabled ? <span>MP4</span> : renderOutFmt({ height: '1.8em', maxWidth: 150 })}
             </td>
             <td>
               <HelpIcon onClick={onOutFmtHelpPress} />
@@ -601,7 +663,7 @@ function ExportConfirm({
                 </>
               )}
 
-              {areWeCutting && (
+              {areWeCutting && !compressExport.enabled && (
                 <>
                   <AnimatedTr>
                     <td>
@@ -634,7 +696,7 @@ function ExportConfirm({
               )}
 
 
-              {isEncoding && (
+              {isEncoding && !compressExport.enabled && (
                 <AnimatedTr>
                   <td>
                     {t('Smart cut auto detect bitrate')}

@@ -6,11 +6,12 @@ import i18n from 'i18next';
 
 import { getSuffixedOutPath, transferTimestamps, getOutFileExtension, getOutDir, getHtml5ifiedPath, unlinkWithRetry, getFrameDuration, isMac, html5ifiedPrefix, html5dummySuffix, assertFileExists } from '../util';
 import { isCuttingStart, isCuttingEnd, runFfmpegWithProgress, getFfCommandLine, getDuration, createChaptersFromSegments, readFileFfprobeMeta, getExperimentalArgs, getVideoTimescaleArgs, logStdoutStderr, runFfmpegConcat, RefuseOverwriteError, runFfmpeg } from '../ffmpeg';
-import { getEffectiveAvoidNegativeTs, getMapStreamsArgs, getStreamIdsToCopy } from '../util/streams';
+import { getAudioStreams, getEffectiveAvoidNegativeTs, getMapStreamsArgs, getRealVideoStreams, getStreamIdsToCopy } from '../util/streams';
 import { needsSmartCut, getCodecParams } from '../smartcut';
 import { getGuaranteedSegments, isDurationValid } from '../segments';
 import type { FFprobeStream } from '../../../common/ffprobe';
-import type { AvoidNegativeTs, FfmpegHwAccel, Html5ifyMode, PreserveMetadata } from '../../../common/types';
+import type { AvoidNegativeTs, CompressExport, FfmpegHwAccel, Html5ifyMode, PreserveMetadata } from '../../../common/types';
+import { compressOutFormat, getCompressEncodeArgs } from '../compress';
 import { deleteDispositionValue, type AllFilesMeta, type Chapter, type CopyfileStreams, type LiteFFprobeStream, type ParamsByFile, type SegmentToExport } from '../types';
 import type { LossyMode } from '../../../main';
 import { UserFacingError } from '../../errors';
@@ -94,7 +95,7 @@ export async function maybeMkDeepOutDir({ outputDir, fileOutPath }: { outputDir:
 }
 
 
-function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, isEncoding, lossyMode, enableOverwriteOutput, outputPlaybackRate, cutFromAdjustmentFrames, cutToAdjustmentFrames, appendLastCommandsLog, encCustomBitrate, appendFfmpegCommandLog, ffmpegHwaccel }: {
+function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, isEncoding, lossyMode, enableOverwriteOutput, outputPlaybackRate, cutFromAdjustmentFrames, cutToAdjustmentFrames, appendLastCommandsLog, encCustomBitrate, appendFfmpegCommandLog, ffmpegHwaccel, compressExport }: {
   filePath: string | undefined,
   treatInputFileModifiedTimeAsStart: boolean,
   treatOutputFileModifiedTimeAsStart: boolean | null | undefined,
@@ -108,6 +109,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
   encCustomBitrate: number | undefined,
   appendFfmpegCommandLog: (args: string[]) => void,
   ffmpegHwaccel: FfmpegHwAccel,
+  compressExport: CompressExport,
 }) {
   const shouldSkipExistingFile = useCallback(async (path: string) => {
     const fileExists = await mainApi.pathExists(path);
@@ -563,6 +565,58 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     await runFfmpeg(ffmpegArgs);
   }, [appendFfmpegCommandLog, filePath]);
 
+  // Re-encode a segment to a compressed MP4 (H.264/H.265), optionally scaled down and/or with a different frame rate
+  const cutEncodeCompressed = useCallback(async ({ cutFrom, cutTo, outPath, rotation, allFilesMeta, copyFileStreams, fileDuration, preserveMetadata, onProgress }: {
+    cutFrom: number,
+    cutTo: number,
+    outPath: string,
+    rotation: number | undefined,
+    allFilesMeta: AllFilesMeta,
+    copyFileStreams: CopyfileStreams,
+    fileDuration: number | undefined,
+    preserveMetadata: PreserveMetadata,
+    onProgress: (p: number) => void,
+  }) => {
+    invariant(filePath != null);
+
+    // only the main file is supported, and we take the first enabled video and audio track
+    const { streams } = allFilesMeta[filePath]!;
+    const enabledStreamIds = new Set(copyFileStreams.find(({ path }) => path === filePath)?.streamIds ?? []);
+    const enabledStreams = streams.filter((stream) => enabledStreamIds.has(stream.index));
+    const [videoStream] = getRealVideoStreams(enabledStreams);
+    const [audioStream] = getAudioStreams(enabledStreams);
+    if (videoStream == null) throw new UserFacingError(i18n.t('Compressed export requires a video track'));
+
+    const cutDuration = cutTo - cutFrom;
+
+    const ffmpegArgs = [
+      '-hide_banner',
+
+      ...(rotation !== undefined ? ['-display_rotation:v:0', String(360 - rotation)] : []),
+
+      '-ss', formatFfmpegNumber(cutFrom),
+      '-i', filePath,
+      '-t', formatFfmpegNumber(cutDuration),
+
+      '-map', `0:${videoStream.index}`,
+      ...(audioStream != null ? ['-map', `0:${audioStream.index}`] : []),
+
+      ...getCompressEncodeArgs(compressExport),
+
+      ...(preserveMetadata === 'none' ? ['-map_metadata', '-1'] : ['-map_metadata', '0']),
+      '-map_chapters', '-1',
+      '-movflags', '+faststart',
+
+      '-f', compressOutFormat, '-y', outPath,
+    ];
+
+    appendFfmpegCommandLog(ffmpegArgs);
+    const result = await runFfmpegWithProgress({ ffmpegArgs, duration: cutDuration, onProgress });
+    logStdoutStderr(result);
+
+    await transferTimestamps({ inPath: filePath, outPath, cutFrom, cutTo, treatInputFileModifiedTimeAsStart, duration: isDurationValid(fileDuration) ? fileDuration : undefined, treatOutputFileModifiedTimeAsStart });
+  }, [appendFfmpegCommandLog, compressExport, filePath, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
+
   const cutMultiple = useCallback(async ({
     outputDir, customOutDir, segments: segmentsIn, cutFileNames, fileDuration, rotation, detectedFps, onProgress: onTotalProgress, keyframeCut, copyFileStreams, allFilesMeta, outFormat, shortestFlag, ffmpegExperimental, preserveMetadata, preserveMetadataOnMerge, preserveMovData, preserveChapters, movFastStart, avoidNegativeTs, paramsByFile, chapters,
   }: {
@@ -617,6 +671,11 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
       if (await shouldSkipExistingFile(finalOutPath)) return { path: finalOutPath, created: false };
 
       await maybeMkDeepOutDir({ outputDir, fileOutPath: finalOutPath });
+
+      if (compressExport.enabled) {
+        await cutEncodeCompressed({ cutFrom: desiredCutFrom, cutTo, outPath: finalOutPath, rotation, allFilesMeta, copyFileStreams, fileDuration, preserveMetadata, onProgress: (progress) => onSingleProgress(i, progress) });
+        return { path: finalOutPath, created: true };
+      }
 
       if (!isEncoding) {
         // simple lossless cut
@@ -728,7 +787,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     } finally {
       if (chaptersPath) await tryDeleteFiles([chaptersPath]);
     }
-  }, [shouldSkipExistingFile, isEncoding, filePath, lossyMode, losslessCutSingle, cutEncodeSmartPart, encCustomBitrate, concatFiles]);
+  }, [shouldSkipExistingFile, compressExport.enabled, isEncoding, filePath, lossyMode, losslessCutSingle, cutEncodeCompressed, cutEncodeSmartPart, encCustomBitrate, concatFiles]);
 
   const concatCutSegments = useCallback(async ({ customOutDir, outFormat, segmentPaths, ffmpegExperimental, onProgress, preserveMovData, movFastStart, chapterNames, preserveMetadataOnMerge, mergedOutFilePath }: {
     customOutDir: string | undefined,

@@ -36,6 +36,19 @@ export type WaveformMode = 'big-waveform' | 'waveform';
 
 export type EnableImportChapters = 'always' | 'never' | 'ask'
 
+export type CompressVideoCodec = 'h264' | 'h265';
+export type CompressResolution = 'original' | 1080 | 720;
+export type CompressFps = 'original' | 24 | 25 | 30 | 50 | 60;
+
+/** Re-encode exported segments to a compressed MP4 (instead of lossless copy) */
+export interface CompressExport {
+  enabled: boolean,
+  videoCodec: CompressVideoCodec,
+  /** Max size of the shortest side (only scales down) */
+  resolution: CompressResolution,
+  fps: CompressFps,
+}
+
 export interface Config {
   version: number,
   lastAppVersion: string,
@@ -116,6 +129,7 @@ export interface Config {
   keyframesEnabled: boolean,
   reducedMotion: 'always' | 'never' | 'user',
   ffmpegHwaccel: FfmpegHwAccel,
+  compressExport: CompressExport,
 }
 
 export interface ApiActionRequest {
