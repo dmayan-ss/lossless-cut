@@ -39,6 +39,7 @@ export type EnableImportChapters = 'always' | 'never' | 'ask'
 export type CompressVideoCodec = 'h264' | 'h265';
 export type CompressResolution = 'original' | 1080 | 720;
 export type CompressFps = 'original' | 24 | 25 | 30 | 50 | 60;
+export type CompressEncoder = 'cpu' | 'nvenc';
 
 /** Re-encode exported segments to a compressed MP4 (instead of lossless copy) */
 export interface CompressExport {
@@ -47,6 +48,8 @@ export interface CompressExport {
   /** Max size of the shortest side (only scales down) */
   resolution: CompressResolution,
   fps: CompressFps,
+  /** undefined means cpu (for configs saved before this option existed) */
+  encoder?: CompressEncoder | undefined,
 }
 
 export interface Config {

@@ -9,19 +9,27 @@ export function getScaleFilter(maxSize: number) {
   return `scale=w='if(gte(iw,ih),-2,min(${maxSize},iw))':h='if(gte(iw,ih),min(${maxSize},ih),-2)'`;
 }
 
-export function getCompressEncodeArgs({ videoCodec, resolution, fps }: Pick<CompressExport, 'videoCodec' | 'resolution' | 'fps'>) {
+function getVideoEncoderArgs({ videoCodec, encoder = 'cpu' }: Pick<CompressExport, 'videoCodec' | 'encoder'>) {
+  // hvc1 tag is needed for playback on Apple devices
+  if (encoder === 'nvenc') {
+    const nvencArgs = ['-preset', 'p5', '-tune', 'hq', '-rc', 'vbr', '-b:v', '0'];
+    return videoCodec === 'h265'
+      ? ['-c:v', 'hevc_nvenc', ...nvencArgs, '-cq', '25', '-tag:v', 'hvc1']
+      : ['-c:v', 'h264_nvenc', ...nvencArgs, '-cq', '21', '-profile:v', 'high'];
+  }
+  return videoCodec === 'h265'
+    ? ['-c:v', 'libx265', '-preset', 'medium', '-crf', '24', '-tag:v', 'hvc1']
+    : ['-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-profile:v', 'high'];
+}
+
+export function getCompressEncodeArgs({ videoCodec, resolution, fps, encoder }: Pick<CompressExport, 'videoCodec' | 'resolution' | 'fps' | 'encoder'>) {
   const filters: string[] = [];
   if (resolution !== 'original') filters.push(getScaleFilter(resolution));
   if (fps !== 'original') filters.push(`fps=${fps}`);
 
-  const videoArgs = videoCodec === 'h265'
-    // hvc1 tag is needed for playback on Apple devices
-    ? ['-c:v', 'libx265', '-preset', 'medium', '-crf', '24', '-tag:v', 'hvc1']
-    : ['-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-profile:v', 'high'];
-
   return [
     ...(filters.length > 0 ? ['-vf', filters.join(',')] : []),
-    ...videoArgs,
+    ...getVideoEncoderArgs({ videoCodec, encoder }),
     // 8 bit 4:2:0 for maximum compatibility (e.g. 10 bit sources from DJI cameras)
     '-pix_fmt', 'yuv420p',
     '-c:a', 'aac', '-b:a', '192k',

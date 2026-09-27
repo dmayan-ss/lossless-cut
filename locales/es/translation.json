@@ -916,5 +916,8 @@
   "Frame rate": "Fotogramas por segundo",
   "Original": "Original",
   "Compressed export requires a video track": "La exportación comprimida requiere una pista de video",
-  "Re-encode the exported segments to a smaller MP4 file (H.264 or H.265). Cuts will be frame accurate, but the export is slower and not lossless. Only the first video and audio track are kept.": "Recodifica los segmentos exportados a un MP4 más liviano (H.264 o H.265). Los cortes son exactos al fotograma, pero la exportación es más lenta y no es sin pérdida. Solo se conservan la primera pista de video y la de audio."
+  "Re-encode the exported segments to a smaller MP4 file (H.264 or H.265). Cuts will be frame accurate, but the export is slower and not lossless. Only the first video and audio track are kept.": "Recodifica los segmentos exportados a un MP4 más liviano (H.264 o H.265). Los cortes son exactos al fotograma, pero la exportación es más lenta y no es sin pérdida. Solo se conservan la primera pista de video y la de audio.",
+  "Encoder": "Codificador",
+  "GPU (NVIDIA)": "GPU (NVIDIA)",
+  "CPU gives the best quality for the file size. GPU (NVIDIA NVENC) is much faster, but files are larger. GPU requires an NVIDIA graphics card.": "CPU da la mejor calidad por tamaño de archivo. GPU (NVIDIA NVENC) es mucho más rápido, pero los archivos quedan más grandes. GPU requiere una placa de video NVIDIA."
 }

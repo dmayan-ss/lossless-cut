@@ -23,7 +23,7 @@ import type { SegmentToExport } from '../types';
 import type { GenerateOutFileNames } from '../util/outputNameTemplate';
 import { defaultCutFileTemplate, defaultCutMergedFileTemplate } from '../util/outputNameTemplate';
 import type { FFprobeStream } from '../../../common/ffprobe';
-import type { AvoidNegativeTs, CompressExport, CompressFps, CompressResolution, PreserveMetadata } from '../../../common/types';
+import type { AvoidNegativeTs, CompressEncoder, CompressExport, CompressFps, CompressResolution, PreserveMetadata } from '../../../common/types';
 import TextInput from './TextInput';
 import type { UseSegments } from '../hooks/useSegments';
 import ExportSheet from './ExportSheet';
@@ -343,6 +343,10 @@ function ExportConfirm({
     showHelpText({ text: t('Re-encode the exported segments to a smaller MP4 file (H.264 or H.265). Cuts will be frame accurate, but the export is slower and not lossless. Only the first video and audio track are kept.') });
   }, [showHelpText, t]);
 
+  const onCompressEncoderHelpPress = useCallback(() => {
+    showHelpText({ text: t('CPU gives the best quality for the file size. GPU (NVIDIA NVENC) is much faster, but files are larger. GPU requires an NVIDIA graphics card.') });
+  }, [showHelpText, t]);
+
   const canEditSegTemplate = !willMerge || !autoDeleteMergedSegments;
 
   const handleEncBitrateToggle = useCallback((checked: boolean) => {
@@ -427,6 +431,21 @@ function ExportConfirm({
                   </Select>
                 </td>
                 <td />
+              </tr>
+
+              <tr>
+                <td>
+                  {t('Encoder')}
+                </td>
+                <td>
+                  <Select value={compressExport.encoder ?? 'cpu'} onChange={(e) => updateCompressExport({ encoder: e.target.value as CompressEncoder })} style={{ height: '1.8em' }}>
+                    <option value={'cpu' satisfies CompressEncoder}>CPU</option>
+                    <option value={'nvenc' satisfies CompressEncoder}>{t('GPU (NVIDIA)')}</option>
+                  </Select>
+                </td>
+                <td>
+                  <HelpIcon onClick={onCompressEncoderHelpPress} />
+                </td>
               </tr>
 
               <tr>

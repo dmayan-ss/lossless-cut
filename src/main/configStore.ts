@@ -172,7 +172,7 @@ const defaults: Config = {
   keyframesEnabled: true,
   reducedMotion: 'user',
   ffmpegHwaccel: 'none',
-  compressExport: { enabled: false, videoCodec: 'h264', resolution: 'original', fps: 'original' },
+  compressExport: { enabled: false, videoCodec: 'h264', resolution: 'original', fps: 'original', encoder: 'cpu' },
 };
 
 const configFileName = 'config.json'; // note: this is also hard-coded inside electron-store

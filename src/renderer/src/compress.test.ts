@@ -19,4 +19,12 @@ describe('getCompressEncodeArgs', () => {
       '-c:a', 'aac', '-b:a', '192k',
     ]);
   });
+
+  test('h265 nvenc', () => {
+    expect(getCompressEncodeArgs({ videoCodec: 'h265', resolution: 'original', fps: 'original', encoder: 'nvenc' })).toEqual([
+      '-c:v', 'hevc_nvenc', '-preset', 'p5', '-tune', 'hq', '-rc', 'vbr', '-b:v', '0', '-cq', '25', '-tag:v', 'hvc1',
+      '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac', '-b:a', '192k',
+    ]);
+  });
 });
